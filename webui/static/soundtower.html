@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>SoundTower</title>
+    <link rel="stylesheet" type="text/css" href="soundtower.css">
+  </head>
+  <body>
+    <h1>SoundTower</h1>
+    <div id="spectrum-container">
+      <canvas id="spectrum"></canvas>
+      <svg id="bottom-axes"></svg>
+    </div>
+    <form action="/settings" method="post">
+      <select id="colors" name="Color Setting" onchange="submitColor();">
+      </select>
+    </form>
+    <script>
+      var canvasSize,spectrum,axes
+      function startup() {
+	axes=document.getElementById('bottom-axes')
+	spectrum=document.getElementById('spectrum')
+	let spstyle=window.getComputedStyle(spectrum)
+	spectrum.width=parseInt(spstyle.width)
+	spectrum.height=parseInt(spstyle.height)
+	canvasSize=[spectrum.width,spectrum.height]
+      }
+      startup()
+      
+      async function submitColor() {
+	data=JSON.stringify({
+	  color: document.getElementById('colors').value,
+	})
+
+	const resp=await fetch('/settings',{
+	  method: 'POST',
+	  body: data
+	});
+	if (!resp.ok) {
+	  const message = `An error has occured: ${resp.status}`
+	  throw new Error(message)
+	}
+      }
+
+      async function buildControls() {
+	const resp=await fetch('/controls')
+	if (!resp.ok) {
+	  const message = `An error has occured: ${resp.status}`
+	  throw new Error(message);
+	}
+	const ctrls=await resp.json();
+	for (const [name,options] of Object.entries(ctrls)) {
+	  console.log(name);
+	  let id=document.getElementById(name)
+	  if (id) {
+	    for (option of options) {
+	      console.log(option);
+	      let opt = document.createElement("option")
+	      opt.text=option
+	      id.add(opt)
+	    }
+	  }
+	}
+      }
+      buildControls();
+
+      function createSVG(type) {
+	return document.createElementNS("http://www.w3.org/2000/svg",type)
+      }
+
+      function lineSVG(start,end,cls) {	
+	let line=createSVG('line')	
+	line.setAttribute("x1",start[0]); line.setAttribute("y1",start[1])
+	line.setAttribute("x2",end[0]); line.setAttribute("y2",end[1])
+	line.setAttribute("class",cls)
+	return line
+      }
+      function textSVG(pos,text) {
+	let txt = createSVG('text')
+	txt.setAttribute('x', pos[0])
+	txt.setAttribute('y', pos[1])
+	txt.textContent = text
+	return txt
+      }
+      
+      function drawSVGAxis(start,finish,ticks,labels,tlen,subticks,subtlen,aclass) { // fractional ticks in [0..1]
+	let svg=document.getElementById('bottom-axes'),
+	    g=createSVG('g'),
+	    delta=finish.map((v,i) => v-start[i]),
+	    dlen=Math.sqrt(delta.reduce((c,v) => c+v**2,0.)),
+	    tslope=[-delta[1]/dlen,delta[0]/dlen] // tickmark slope (unit)
+
+	g.setAttribute("class",aclass)
+	g.appendChild(lineSVG(start,finish,'spine'))
+	for (const [i, t] of ticks.entries()) {
+	  let tstart=start.map((v,i)=> v + t*delta[i])
+	  let tend=tstart.map((v,i)=> v + tlen * tslope[i])
+	  g.appendChild(lineSVG(tstart,tend,'tick'))
+	  g.appendChild(textSVG(tend,labels[i]))
+	}
+	for (const [i, t] of subticks.entries()) {
+	  let tstart=start.map((v,i)=> v + t*delta[i])
+	  let tend=tstart.map((v,i)=> v + subtlen * tslope[i])
+	  g.appendChild(lineSVG(tstart,tend,'subtick'))
+	}
+	svg.appendChild(g);
+      }
+
+      const range = (start, end, length = end - start) =>
+	    Array.from({ length }, (_, i) => start + i)
+
+      function drawSVGAxes() {
+	let halfFac=Math.sqrt(noteFac),
+	    low=bottomFreq/halfFac,
+	    high=bottomFreq * 2**nOctaves / halfFac,
+	    llow=Math.log10(low),lhigh=Math.log10(high),
+	    lowDecade=Math.ceil(llow),highDecade=Math.floor(lhigh),
+	    labels,ticks,subticks=[],
+	    xoff=parseInt(window.getComputedStyle(axes).width)-canvasSize[0]
+
+	//Major Ticks & Labels
+	ticks=range(lowDecade,highDecade+1).map(v=>(v-llow)/(lhigh-llow))
+	labels=range(lowDecade,highDecade+1).map(v=>Math.pow(10,v).toString())
+	
+	//Sub-ticks
+	for (d=lowDecade-1;d<=highDecade;d++) {
+	  for (let st of range(2,10).map(v=>d + Math.log10(v))) {
+	    if ((d>=lowDecade && d<highDecade) || (st >= llow && st<=lhigh)) {
+	      subticks.push((st-llow)/(lhigh-llow))
+	    }
+	  }
+	}
+	drawSVGAxis([xoff,1],[xoff+canvasSize[0],1],ticks,labels,7,subticks,4,'xaxis freq')
+	
+	let logNoteDel=Math.log10(2**(1/12)),bbox=axes.getBBox(),ynext=bbox.y+bbox.height+1,
+	    C1=Math.log10(55)-9*logNoteDel // 9 semi-tones below A1@55Hz
+
+	labels=[]
+	ticks=[]
+	  
+	for (let o of range(1,nOctaves+2)) {
+	  for (let [i, n] of [0,5,9].entries()) {
+	    let logf = C1 + logNoteDel*(n+(o-1)*12)
+	    if (logf>=llow && logf<=lhigh) {
+	      labels.push('CFA'[i]+o)
+	      ticks.push((logf-llow)/(lhigh-llow))
+	    }
+	  }
+	}
+	drawSVGAxis([xoff,ynext],[xoff+canvasSize[0],ynext],ticks,labels,4,[],null,'xaxis freq')
+	bbox=axes.getBBox()
+	axes.setAttribute('height',bbox.y+bbox.height+1)
+      }
+
+      var bottomFreq=55,nOctaves=1,nNotes=6,noteFac
+      async function colorOctaves() {
+	const resp=await fetch('/octaves')
+	if (!resp.ok) {
+	  const message = `An error has occured: ${resp.status}`
+	  throw new Error(message);
+	}
+	({bottomFreq,nOctaves,nNotes}=await resp.json())
+	noteFac=2**(1/nNotes)
+	spectrum.style.setProperty("--stripe",`calc(100%/${nOctaves*nNotes})`)
+	let v="var(--stripe)",
+	    lgt=[86,72,55],
+	    hsl=(j,l) => `hsl(${j*300/(nNotes-1)},50%,${l}%)`,
+	    rainbow=[...Array(nNotes)].map((_,i) => {
+	      let l = (i==nNotes-1?lgt[2]:lgt[1])
+	      return `${hsl(i,lgt[0])} calc(${i}*${v}), ${hsl(i,lgt[0])} calc(${i+1}*${v} - 1px),` +
+		`${hsl(i+0.5,l)} calc(${i+1}*${v} - 1px), ${hsl(i+0.5,l)} calc(${i+1}*${v})`
+	    }).join(",")
+	spectrum.style.background=`repeating-linear-gradient(to right,${rainbow})`
+      }
+      colorOctaves().then(drawSVGAxes)
+      
+    </script>
+  </body>
+</html>
+

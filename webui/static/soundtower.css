@@ -1,0 +1,44 @@
+:root {
+    font-family: Arial, Helvetica, sans-serif;
+    --width: 840px;		/*width/height must be in pixels*/
+    --height: 600px;
+    --border: 3px;
+    --bottom-gutter: 3em;
+    --left-gutter: 0.25em;
+}
+
+#spectrum-container{
+    position: relative;
+}
+
+#spectrum{
+    width: var(--width);
+    height: var(--height);
+    border: solid #aaa;
+    border-width: var(--border) var(--border) 0 var(--border);
+    margin-bottom: var(--bottom-gutter);
+    margin-left: var(--left-gutter);
+}
+
+#bottom-axes{
+    position: absolute;
+    top: calc(var(--height) + var(--border));
+    left:0;
+    width: calc(var(--left-gutter) + var(--border) + var(--width));
+}
+
+#bottom-axes line{
+    stroke-width: 1;
+    stroke: black;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+#bottom-axes text{
+    fill: black;
+    text-anchor: middle;
+}
+
+#bottom-axes .xaxis text {
+    dominant-baseline: text-before-edge;
+}
